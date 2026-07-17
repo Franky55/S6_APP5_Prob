@@ -4,86 +4,80 @@
 #include <BLEUtils.h>
 #include <BLEScan.h>
 #include <BLEAdvertisedDevice.h>
-#include <BLEEddystoneURL.h>
-#include <BLEEddystoneTLM.h>
 #include <BLEBeacon.h>
+#define ENDIAN_CHANGE_U16(x) ((((x) & 0xFF00) >> 8) | (((x) & 0x00FF) << 8))
 
-int scanTime = 5;  //In seconds
+int scanTime = 5;
 BLEScan *pBLEScan;
+
+std::vector<String> foundBeacons;
+std::vector<String> currentScanBeacons;
 
 class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks {
   void onResult(BLEAdvertisedDevice advertisedDevice) {
-    if (advertisedDevice.haveName()) {
-      Serial.print("Device name: ");
-      Serial.println(advertisedDevice.getName().c_str());
-      Serial.println("");
+
+    if (!advertisedDevice.haveManufacturerData()) {
+      return;
     }
 
-    if (advertisedDevice.haveServiceUUID()) {
-      BLEUUID devUUID = advertisedDevice.getServiceUUID();
-      Serial.print("Found ServiceUUID: ");
-      Serial.println(devUUID.toString().c_str());
-      Serial.println("");
+    String strManufacturerData = advertisedDevice.getManufacturerData();
+
+    uint8_t cManufacturerData[255];
+    size_t dataLength = strManufacturerData.length();
+
+    if (dataLength > sizeof(cManufacturerData)) {
+      return;
     }
 
-    if (advertisedDevice.haveManufacturerData() == true) {
-      String strManufacturerData = advertisedDevice.getManufacturerData();
+    memcpy(cManufacturerData, strManufacturerData.c_str(), dataLength);
 
-      // Buffer to store manufacturer data (BLE max is 255 bytes)
-      uint8_t cManufacturerData[255];
-      size_t dataLength = strManufacturerData.length();
+    // Vérifie si c'est un iBeacon Apple
+    if (dataLength == 25 &&
+        cManufacturerData[0] == 0x4C &&
+        cManufacturerData[1] == 0x00) {
 
-      // Bounds checking to prevent buffer overflow
-      if (dataLength <= sizeof(cManufacturerData)) {
-        memcpy(cManufacturerData, strManufacturerData.c_str(), dataLength);
+      BLEBeacon oBeacon;
+      oBeacon.setData(strManufacturerData);
 
-        if (dataLength == 25 && cManufacturerData[0] == 0x4C && cManufacturerData[1] == 0x00) {
-          Serial.println("Found an iBeacon!");
-          BLEBeacon oBeacon = BLEBeacon();
-          oBeacon.setData(strManufacturerData);
-          Serial.printf("iBeacon Frame\n");
-          Serial.printf(
-            "ID: %04X Major: %u Minor: %u UUID: %s Power: %d\n", oBeacon.getManufacturerId(), ENDIAN_CHANGE_U16(oBeacon.getMajor()),
-            ENDIAN_CHANGE_U16(oBeacon.getMinor()), oBeacon.getProximityUUID().toString().c_str(), oBeacon.getSignalPower()
-          );
-        } else {
-          Serial.println("Found another manufacturers beacon!");
-          Serial.printf("strManufacturerData: %lu ", (unsigned long)dataLength);
-          for (int i = 0; i < dataLength; i++) {
-            Serial.printf("[%02X]", cManufacturerData[i]);
-          }
-          Serial.printf("\n");
+      String uuid = oBeacon.getProximityUUID().toString();
+
+      // Ajouter au scan courant si absent
+      bool foundInCurrentScan = false;
+
+      for (auto &beacon : currentScanBeacons) {
+        if (beacon == uuid) {
+          foundInCurrentScan = true;
+          break;
         }
-      } else {
-        Serial.printf("Manufacturer data too large (%lu bytes), skipping\n", (unsigned long)dataLength);
       }
-    }
 
-    if (advertisedDevice.getFrameType() == BLE_EDDYSTONE_URL_FRAME) {
-      Serial.println("Found an EddystoneURL beacon!");
-      BLEEddystoneURL EddystoneURL = BLEEddystoneURL(&advertisedDevice);
-      Serial.printf("URL bytes: 0x");
-      String url = EddystoneURL.getURL();
-      for (auto byte : url) {
-        Serial.printf("%02X", byte);
+      if (!foundInCurrentScan) {
+        currentScanBeacons.push_back(uuid);
       }
-      Serial.printf("\n");
-      Serial.printf("Decoded URL: %s\n", EddystoneURL.getDecodedURL().c_str());
-      Serial.printf("EddystoneURL.getDecodedURL(): %s\n", EddystoneURL.getDecodedURL().c_str());
-      Serial.printf("TX power %d (Raw 0x%02X)\n", EddystoneURL.getPower(), EddystoneURL.getPower());
-      Serial.println("\n");
-    }
 
-    if (advertisedDevice.getFrameType() == BLE_EDDYSTONE_TLM_FRAME) {
-      Serial.println("Found an EddystoneTLM beacon!");
-      BLEEddystoneTLM EddystoneTLM(&advertisedDevice);
-      Serial.printf("Reported battery voltage: %umV\n", EddystoneTLM.getVolt());
-      Serial.printf("Reported temperature: %.2f°C (raw data=0x%04X)\n", EddystoneTLM.getTemp(), EddystoneTLM.getRawTemp());
-      Serial.printf("Reported advertise count: %" PRIu32 "\n", EddystoneTLM.getCount());
-      Serial.printf("Reported time since last reboot: %" PRIu32 "s\n", EddystoneTLM.getTime());
-      Serial.println("\n");
-      Serial.print(EddystoneTLM.toString().c_str());
-      Serial.println("\n");
+      // Vérifier si c'est une nouvelle balise
+      bool alreadyExists = false;
+
+      for (auto &beacon : foundBeacons) {
+        if (beacon == uuid) {
+          alreadyExists = true;
+          break;
+        }
+      }
+
+      if (!alreadyExists) {
+        foundBeacons.push_back(uuid);
+
+        Serial.println("Found a new iBeacon!");
+        Serial.printf(
+          "ID: %04X Major: %u Minor: %u UUID: %s Power: %d\n",
+          oBeacon.getManufacturerId(),
+          ENDIAN_CHANGE_U16(oBeacon.getMajor()),
+          ENDIAN_CHANGE_U16(oBeacon.getMinor()),
+          uuid.c_str(),
+          oBeacon.getSignalPower()
+        );
+      }
     }
   }
 };
@@ -93,19 +87,60 @@ void setup() {
   Serial.println("Scanning...");
 
   BLEDevice::init("");
-  pBLEScan = BLEDevice::getScan();  //create new scan
-  pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks());
-  pBLEScan->setActiveScan(true);  //active scan uses more power, but get results faster
+
+  pBLEScan = BLEDevice::getScan();
+  pBLEScan->setAdvertisedDeviceCallbacks(
+      new MyAdvertisedDeviceCallbacks());
+
+  pBLEScan->setActiveScan(true);
   pBLEScan->setInterval(100);
-  pBLEScan->setWindow(99);  // less or equal setInterval value
+  pBLEScan->setWindow(99);
 }
 
 void loop() {
-  // put your main code here, to run repeatedly:
-  BLEScanResults *foundDevices = pBLEScan->start(scanTime, false);
-  Serial.print("Devices found: ");
-  Serial.println(foundDevices->getCount());
-  Serial.println("Scan done!");
-  pBLEScan->clearResults();  // delete results fromBLEScan buffer to release memory
+
+  // Vider la liste des balises vues durant ce scan
+  currentScanBeacons.clear();
+
+  BLEScanResults *foundDevices =
+      pBLEScan->start(scanTime, false);
+
+  Serial.printf(
+      "\nScan complete - %d devices found\n",
+      foundDevices->getCount());
+
+  // Supprimer les balises disparues
+  for (int i = foundBeacons.size() - 1; i >= 0; i--) {
+
+    bool seen = false;
+
+    for (auto &uuid : currentScanBeacons) {
+      if (foundBeacons[i] == uuid) {
+        seen = true;
+        break;
+      }
+    }
+
+    if (!seen) {
+      Serial.printf(
+          "Beacon disappeared: %s\n",
+          foundBeacons[i].c_str());
+
+      foundBeacons.erase(foundBeacons.begin() + i);
+    }
+  }
+
+  // Afficher les balises actuellement présentes
+  Serial.println("\nCurrent beacons:");
+
+  for (size_t i = 0; i < foundBeacons.size(); i++) {
+    Serial.printf(
+        "%d : %s\n",
+        i,
+        foundBeacons[i].c_str());
+  }
+
+  pBLEScan->clearResults();
+
   delay(2000);
 }
