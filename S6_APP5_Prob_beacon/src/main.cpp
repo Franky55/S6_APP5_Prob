@@ -1,8 +1,11 @@
 #include <Arduino.h>
 
 #include <WiFi.h>
+#include <WiFiUdp.h>
+
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
+
 #include <ArduinoJson.h>
 
 #include <BLEDevice.h>
@@ -20,14 +23,30 @@ const char* password = "VroomVroom";
 
 // ================= BLE ==================
 
-int scanTime = 5;
 BLEScan *pBLEScan;
+
+int scanTime = 1;
+
+const unsigned long BEACON_TIMEOUT = 3000;
+
 
 
 // ================= WEBSOCKET ============
 
 AsyncWebServer server(80);
+
 AsyncWebSocket ws("/ws");
+
+
+
+// ================= COAP =================
+
+WiFiUDP coapUDP;
+
+#define COAP_PORT 5683
+
+#define LED_PIN 32
+
 
 
 // ================= BEACONS ==============
@@ -42,12 +61,10 @@ struct BeaconInfo
 std::vector<BeaconInfo> foundBeacons;
 
 
-// Temps avant de considérer un beacon perdu
-const unsigned long BEACON_TIMEOUT = 10000;
 
-
-
-// ================= JSON SEND ============
+// =================================================
+// ENVOI WEBSOCKET JSON
+// =================================================
 
 void sendBeaconEvent(String uuid, String event)
 {
@@ -56,41 +73,58 @@ void sendBeaconEvent(String uuid, String event)
     doc["event"] = event;
     doc["uuid"] = uuid;
 
+
     String json;
 
-    serializeJson(doc, json);
+    serializeJson(
+        doc,
+        json
+    );
+
 
     Serial.println(json);
+
 
     ws.textAll(json);
 }
 
 
 
-// ================= BLE CALLBACK =========
+// =================================================
+// CALLBACK BLE
+// =================================================
 
-class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
+class MyAdvertisedDeviceCallbacks :
+public BLEAdvertisedDeviceCallbacks
 {
 
-    void onResult(BLEAdvertisedDevice advertisedDevice)
+    void onResult(
+        BLEAdvertisedDevice advertisedDevice
+    )
     {
+
 
         if(!advertisedDevice.haveManufacturerData())
             return;
+
 
 
         String manufacturerData =
             advertisedDevice.getManufacturerData();
 
 
+
         uint8_t data[255];
+
 
         size_t dataLength =
             manufacturerData.length();
 
 
+
         if(dataLength > sizeof(data))
             return;
+
 
 
         memcpy(
@@ -101,7 +135,7 @@ class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
 
 
 
-        // Vérification iBeacon Apple
+        // iBeacon Apple
 
         if(
             dataLength == 25 &&
@@ -112,7 +146,11 @@ class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
 
             BLEBeacon beacon;
 
-            beacon.setData(manufacturerData);
+
+            beacon.setData(
+                manufacturerData
+            );
+
 
 
             String uuid =
@@ -123,8 +161,6 @@ class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
             bool exists = false;
 
 
-
-            // Cherche si le beacon existe déjà
 
             for(auto &b : foundBeacons)
             {
@@ -142,28 +178,33 @@ class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
 
 
 
-            // Nouveau beacon
-
             if(!exists)
             {
 
                 BeaconInfo newBeacon;
 
+
                 newBeacon.uuid = uuid;
 
-                newBeacon.lastSeen = millis();
+
+                newBeacon.lastSeen =
+                    millis();
 
 
-                foundBeacons.push_back(newBeacon);
 
-
-
-                Serial.println("New beacon found");
-
-                Serial.printf(
-                    "UUID : %s\n",
-                    uuid.c_str()
+                foundBeacons.push_back(
+                    newBeacon
                 );
+
+
+
+                Serial.println(
+                    "Beacon found"
+                );
+
+
+                Serial.println(uuid);
+
 
 
                 sendBeaconEvent(
@@ -171,14 +212,146 @@ class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
                     "found"
                 );
             }
+
         }
+
     }
+
 };
 
 
 
 
-// ================= SETUP =================
+// =================================================
+// SERVEUR COAP SIMPLE
+// =================================================
+
+void handleCoAP()
+{
+    int packetSize = coapUDP.parsePacket();
+
+    if(packetSize == 0)
+        return;
+
+
+    uint8_t buffer[256];
+
+    int len = coapUDP.read(
+        buffer,
+        sizeof(buffer)
+    );
+
+
+    Serial.println("CoAP packet received:");
+
+    for(int i = 0; i < len; i++)
+    {
+        Serial.printf("%02X ", buffer[i]);
+    }
+
+    Serial.println();
+
+
+
+    bool ledOn = false;
+    bool ledOff = false;
+
+
+
+    // Recherche des options URI Path
+
+    for(int i = 0; i < len; i++)
+    {
+
+        // "on"
+        if(
+            buffer[i] == 'o' &&
+            i+1 < len &&
+            buffer[i+1] == 'n'
+        )
+        {
+            ledOn = true;
+        }
+
+
+        // "off"
+        if(
+            buffer[i] == 'o' &&
+            i+2 < len &&
+            buffer[i+1] == 'f' &&
+            buffer[i+2] == 'f'
+        )
+        {
+            ledOff = true;
+        }
+
+    }
+
+
+
+    if(ledOn)
+    {
+        digitalWrite(
+            LED_PIN,
+            HIGH
+        );
+
+        Serial.println(
+            "LED ON"
+        );
+    }
+
+
+
+    if(ledOff)
+    {
+        digitalWrite(
+            LED_PIN,
+            LOW
+        );
+
+        Serial.println(
+            "LED OFF"
+        );
+    }
+
+
+
+    // Réponse UDP simple
+
+    IPAddress client =
+        coapUDP.remoteIP();
+
+
+    uint16_t port =
+        coapUDP.remotePort();
+
+
+
+    coapUDP.beginPacket(
+        client,
+        port
+    );
+
+
+    const char response[] = "OK";
+
+
+    coapUDP.write(
+        (const uint8_t*)response,
+        strlen(response)
+    );
+
+
+    coapUDP.endPacket();
+}
+
+
+
+
+// =================================================
+// SETUP
+// =================================================
 
 void setup()
 {
@@ -187,7 +360,22 @@ void setup()
 
 
 
-    // -------- WIFI --------
+    // LED
+
+    pinMode(
+        LED_PIN,
+        OUTPUT
+    );
+
+
+    digitalWrite(
+        LED_PIN,
+        HIGH
+    );
+
+
+
+    // WIFI
 
     WiFi.begin(
         ssid,
@@ -195,23 +383,36 @@ void setup()
     );
 
 
-    Serial.print("Connecting WiFi");
+    Serial.print(
+        "Connexion WiFi"
+    );
 
 
     while(
-        WiFi.status() != WL_CONNECTED
+        WiFi.status()
+        != WL_CONNECTED
     )
     {
+
         delay(500);
+
         Serial.print(".");
     }
 
 
+
     Serial.println();
 
-    Serial.println("WiFi connected");
 
-    Serial.print("IP : ");
+    Serial.println(
+        "WiFi connecté"
+    );
+
+
+    Serial.print(
+        "IP : "
+    );
+
 
     Serial.println(
         WiFi.localIP()
@@ -219,35 +420,43 @@ void setup()
 
 
 
-    // -------- WebSocket --------
 
-    ws.onEvent(
-        [](AsyncWebSocket *server,
-           AsyncWebSocketClient *client,
-           AwsEventType type,
-           void *arg,
-           uint8_t *data,
-           size_t len)
-        {
+    // WebSocket
 
-        }
+    server.addHandler(
+        &ws
     );
 
-
-    server.addHandler(&ws);
 
     server.begin();
 
 
 
 
-    // -------- BLE --------
+    // COAP
+
+    coapUDP.begin(
+        COAP_PORT
+    );
+
+
+    Serial.println(
+        "CoAP started UDP 5683"
+    );
+
+
+
+
+
+    // BLE
 
     BLEDevice::init("");
 
 
+
     pBLEScan =
         BLEDevice::getScan();
+
 
 
     pBLEScan->setAdvertisedDeviceCallbacks(
@@ -255,29 +464,43 @@ void setup()
     );
 
 
-    pBLEScan->setActiveScan(true);
 
-
-    pBLEScan->setInterval(100);
-
-
-    pBLEScan->setWindow(99);
+    pBLEScan->setActiveScan(
+        true
+    );
 
 
 
-    Serial.println("BLE ready");
+    pBLEScan->setInterval(
+        50
+    );
+
+
+
+    pBLEScan->setWindow(
+        50
+    );
+
+
+
+    Serial.println(
+        "BLE ready"
+    );
 
 }
 
 
 
 
-// ================= LOOP ==================
+// =================================================
+// LOOP
+// =================================================
 
 void loop()
 {
 
-    // Scan BLE
+
+    // BLE scan
 
     BLEScanResults *results =
         pBLEScan->start(
@@ -286,14 +509,12 @@ void loop()
         );
 
 
-    Serial.printf(
-        "Devices found : %d\n",
-        results->getCount()
-    );
+
+    pBLEScan->clearResults();
 
 
 
-    // Vérification timeout
+    // Beacon timeout
 
     for(
         int i = foundBeacons.size()-1;
@@ -303,7 +524,9 @@ void loop()
     {
 
         if(
-            millis() - foundBeacons[i].lastSeen
+            millis()
+            -
+            foundBeacons[i].lastSeen
             >
             BEACON_TIMEOUT
         )
@@ -314,10 +537,15 @@ void loop()
 
 
 
-            Serial.printf(
-                "Beacon lost : %s\n",
-                uuid.c_str()
+            Serial.println(
+                "Beacon lost:"
             );
+
+
+            Serial.println(
+                uuid
+            );
+
 
 
             sendBeaconEvent(
@@ -330,33 +558,25 @@ void loop()
             foundBeacons.erase(
                 foundBeacons.begin()+i
             );
+
         }
-    }
-
-
-
-    // Affichage état actuel
-
-    Serial.println("\nCurrent beacons:");
-
-    for(auto &b : foundBeacons)
-    {
-
-        Serial.printf(
-            "%s  last seen %lu ms ago\n",
-            b.uuid.c_str(),
-            millis()-b.lastSeen
-        );
 
     }
 
 
 
-    pBLEScan->clearResults();
+    // CoAP
 
+    handleCoAP();
+
+
+
+    // Websocket
 
     ws.cleanupClients();
 
 
-    delay(1000);
+
+    delay(100);
+
 }
