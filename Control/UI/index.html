@@ -80,6 +80,16 @@
 </head>
 <body>
   <h1>iBeacon Archive</h1>
+
+  <h2>LED Control</h2>
+  <div class="led-section">
+    <div class="led-buttons">
+      <button class="on" onclick="ledOn()">LED ON</button>
+      <button class="off" onclick="ledOff()">LED OFF</button>
+    </div>
+    <div id="led-status"></div>
+  </div>
+
   <div id="status">Loading...</div>
   <table>
     <thead>
@@ -91,15 +101,6 @@
     </thead>
     <tbody id="entries"></tbody>
   </table>
-
-  <h2>LED Control</h2>
-  <div class="led-section">
-    <div class="led-buttons">
-      <button class="on" onclick="ledOn()">LED ON</button>
-      <button class="off" onclick="ledOff()">LED OFF</button>
-    </div>
-    <div id="led-status"></div>
-  </div>
 
   <script>
     async function fetchEntries() {
