@@ -7,6 +7,7 @@ const MQTT_BROKER = "mqtt://localhost:1883";
 const MQTT_TOPIC = "Archive/DB";
 const RECONNECT_DELAY = 3000;
 const HTTP_PORT = 3000;
+const CONTROL_ADDRESS = "http://localhost:3001";
 const CSV_PATH = path.join(__dirname, "db.csv");
 const UI_PATH = path.join(__dirname, "../../Control/UI/index.html");
 
@@ -35,6 +36,26 @@ function readCSV() {
   });
 }
 
+function proxyToControl(command, res) {
+  const url = CONTROL_ADDRESS + "/led/" + command;
+  const req = http.request(url, { method: "POST" }, (proxyRes) => {
+    let body = "";
+    proxyRes.on("data", (chunk) => { body += chunk; });
+    proxyRes.on("end", () => {
+      res.writeHead(proxyRes.statusCode, { "Content-Type": "application/json" });
+      res.end(body);
+    });
+  });
+
+  req.on("error", (err) => {
+    console.error("Archive: Proxy error:", err.message);
+    res.writeHead(500, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ status: "error", message: "Control unreachable: " + err.message }));
+  });
+
+  req.end();
+}
+
 function startHTTP() {
   const server = http.createServer((req, res) => {
     if (req.url === "/") {
@@ -51,6 +72,10 @@ function startHTTP() {
       const entries = readCSV();
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify(entries));
+    } else if (req.url === "/led/on" && req.method === "POST") {
+      proxyToControl("on", res);
+    } else if (req.url === "/led/off" && req.method === "POST") {
+      proxyToControl("off", res);
     } else {
       res.writeHead(404, { "Content-Type": "text/plain" });
       res.end("Not found");

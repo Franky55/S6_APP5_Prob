@@ -1,12 +1,10 @@
 {
   "name": "control",
   "version": "1.0.0",
-  "description": "Control WebSocket client for ESP32 iBeacon detection",
+  "description": "Control HTTP server for ESP32 LED via CoAP",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
-  "dependencies": {
-    "ws": "^8.18.0"
-  }
+  "dependencies": {}
 }

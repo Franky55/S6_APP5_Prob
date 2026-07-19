@@ -14,6 +14,10 @@
     h1 {
       color: #4fc3f7;
     }
+    h2 {
+      color: #4fc3f7;
+      margin-top: 40px;
+    }
     table {
       border-collapse: collapse;
       width: 100%;
@@ -35,6 +39,43 @@
       margin-top: 10px;
       color: #888;
     }
+    .led-section {
+      margin-top: 30px;
+      padding: 20px;
+      border: 1px solid #444;
+      border-radius: 8px;
+      background: #222;
+    }
+    .led-buttons {
+      display: flex;
+      gap: 10px;
+      margin-top: 10px;
+    }
+    .led-buttons button {
+      font-family: monospace;
+      font-size: 14px;
+      padding: 10px 20px;
+      border: 1px solid #444;
+      border-radius: 4px;
+      cursor: pointer;
+      background: #333;
+      color: #e0e0e0;
+    }
+    .led-buttons button:hover {
+      background: #444;
+    }
+    .led-buttons button.on {
+      border-color: #4caf50;
+      color: #4caf50;
+    }
+    .led-buttons button.off {
+      border-color: #f44336;
+      color: #f44336;
+    }
+    #led-status {
+      margin-top: 10px;
+      color: #888;
+    }
   </style>
 </head>
 <body>
@@ -51,6 +92,15 @@
     <tbody id="entries"></tbody>
   </table>
 
+  <h2>LED Control</h2>
+  <div class="led-section">
+    <div class="led-buttons">
+      <button class="on" onclick="ledOn()">LED ON</button>
+      <button class="off" onclick="ledOff()">LED OFF</button>
+    </div>
+    <div id="led-status"></div>
+  </div>
+
   <script>
     async function fetchEntries() {
       try {
@@ -66,6 +116,38 @@
         document.getElementById("status").textContent = entries.length + " entries | Last refresh: " + new Date().toLocaleTimeString();
       } catch (err) {
         document.getElementById("status").textContent = "Error: " + err.message;
+      }
+    }
+
+    async function ledOn() {
+      const el = document.getElementById("led-status");
+      el.textContent = "Sending...";
+      try {
+        const res = await fetch("/led/on", { method: "POST" });
+        const data = await res.json();
+        if (data.status === "ok") {
+          el.textContent = "LED turned ON | ESP32: " + data.response;
+        } else {
+          el.textContent = "Error: " + data.message;
+        }
+      } catch (err) {
+        el.textContent = "Error: " + err.message;
+      }
+    }
+
+    async function ledOff() {
+      const el = document.getElementById("led-status");
+      el.textContent = "Sending...";
+      try {
+        const res = await fetch("/led/off", { method: "POST" });
+        const data = await res.json();
+        if (data.status === "ok") {
+          el.textContent = "LED turned OFF | ESP32: " + data.response;
+        } else {
+          el.textContent = "Error: " + data.message;
+        }
+      } catch (err) {
+        el.textContent = "Error: " + err.message;
       }
     }
 

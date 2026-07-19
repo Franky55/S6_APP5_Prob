@@ -1,34 +1,86 @@
-const WebSocket = require("ws");
+const http = require("http");
+const dgram = require("dgram");
+const fs = require("fs");
+const path = require("path");
 
-const ESP32_ADDRESS = "ws://192.168.0.185/ws";
-const RECONNECT_DELAY = 3000;
+const HTTP_PORT = 3001;
+const ESP32_IP = "192.168.0.185";
+const COAP_PORT = 5683;
+const UI_PATH = path.join(__dirname, "UI/index.html");
 
-let ws;
+const udpClient = dgram.createSocket("udp4");
 
-function connect() {
-  ws = new WebSocket(ESP32_ADDRESS);
+function sendCoAP(command) {
+  return new Promise((resolve, reject) => {
+    const message = Buffer.from(command);
+    udpClient.send(message, 0, message.length, COAP_PORT, ESP32_IP, (err) => {
+      if (err) {
+        reject(err);
+        return;
+      }
+      console.log("Control: Sent CoAP command:", command);
+    });
 
-  ws.on("open", () => {
-    console.log("Control: Connected to ESP32");
-  });
+    const timeout = setTimeout(() => {
+      udpClient.removeListener("message", onMessage);
+      reject(new Error("CoAP timeout"));
+    }, 3000);
 
-  ws.on("message", (data) => {
-    try {
-      const message = JSON.parse(data.toString());
-      console.log("Control: UUID received:", message.uuid, "| Event:", message.event);
-    } catch (err) {
-      console.error("Control: Failed to parse message:", err.message);
+    function onMessage(msg) {
+      clearTimeout(timeout);
+      udpClient.removeListener("message", onMessage);
+      resolve(msg.toString());
     }
-  });
 
-  ws.on("error", (err) => {
-    console.error("Control: WebSocket error:", err.message);
-  });
-
-  ws.on("close", () => {
-    console.log("Control: Disconnected from ESP32. Reconnecting in " + RECONNECT_DELAY + "ms...");
-    setTimeout(connect, RECONNECT_DELAY);
+    udpClient.once("message", onMessage);
   });
 }
 
-connect();
+function startHTTP() {
+  const server = http.createServer((req, res) => {
+    if (req.url === "/" && req.method === "GET") {
+      fs.readFile(UI_PATH, (err, data) => {
+        if (err) {
+          res.writeHead(500, { "Content-Type": "text/plain" });
+          res.end("Error loading UI");
+          return;
+        }
+        res.writeHead(200, { "Content-Type": "text/html" });
+        res.end(data);
+      });
+    } else if (req.url === "/led/on" && req.method === "POST") {
+      sendCoAP("on")
+        .then((response) => {
+          console.log("Control: ESP32 responded:", response);
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ status: "ok", led: "on", response: response }));
+        })
+        .catch((err) => {
+          console.error("Control: CoAP error:", err.message);
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ status: "error", message: err.message }));
+        });
+    } else if (req.url === "/led/off" && req.method === "POST") {
+      sendCoAP("off")
+        .then((response) => {
+          console.log("Control: ESP32 responded:", response);
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ status: "ok", led: "off", response: response }));
+        })
+        .catch((err) => {
+          console.error("Control: CoAP error:", err.message);
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ status: "error", message: err.message }));
+        });
+    } else {
+      res.writeHead(404, { "Content-Type": "text/plain" });
+      res.end("Not found");
+    }
+  });
+
+  server.listen(HTTP_PORT, () => {
+    console.log("Control: HTTP server running on http://localhost:" + HTTP_PORT);
+  });
+}
+
+startHTTP();
