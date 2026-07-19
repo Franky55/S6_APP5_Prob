@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>iBeacon Archive</title>
+  <style>
+    body {
+      font-family: monospace;
+      margin: 40px;
+      background: #1a1a1a;
+      color: #e0e0e0;
+    }
+    h1 {
+      color: #4fc3f7;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin-top: 20px;
+    }
+    th, td {
+      border: 1px solid #444;
+      padding: 8px 12px;
+      text-align: left;
+    }
+    th {
+      background: #333;
+      color: #4fc3f7;
+    }
+    tr:nth-child(even) {
+      background: #222;
+    }
+    #status {
+      margin-top: 10px;
+      color: #888;
+    }
+  </style>
+</head>
+<body>
+  <h1>iBeacon Archive</h1>
+  <div id="status">Loading...</div>
+  <table>
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Event</th>
+        <th>UUID</th>
+      </tr>
+    </thead>
+    <tbody id="entries"></tbody>
+  </table>
+
+  <script>
+    async function fetchEntries() {
+      try {
+        const res = await fetch("/api/entries");
+        const entries = await res.json();
+        const tbody = document.getElementById("entries");
+        tbody.innerHTML = "";
+        entries.reverse().forEach((entry) => {
+          const tr = document.createElement("tr");
+          tr.innerHTML = "<td>" + entry.date + "</td><td>" + entry.event + "</td><td>" + entry.uuid + "</td>";
+          tbody.appendChild(tr);
+        });
+        document.getElementById("status").textContent = entries.length + " entries | Last refresh: " + new Date().toLocaleTimeString();
+      } catch (err) {
+        document.getElementById("status").textContent = "Error: " + err.message;
+      }
+    }
+
+    fetchEntries();
+    setInterval(fetchEntries, 5000);
+  </script>
+</body>
+</html>

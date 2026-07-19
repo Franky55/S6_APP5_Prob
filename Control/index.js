@@ -1,6 +1,6 @@
 const WebSocket = require("ws");
 
-const ESP32_ADDRESS = "ws://10.158.122.227/ws";
+const ESP32_ADDRESS = "ws://192.168.0.185/ws";
 const RECONNECT_DELAY = 3000;
 
 let ws;
@@ -15,7 +15,7 @@ function connect() {
   ws.on("message", (data) => {
     try {
       const message = JSON.parse(data.toString());
-      console.log("Control: UUID received:", message.uuid);
+      console.log("Control: UUID received:", message.uuid, "| Event:", message.event);
     } catch (err) {
       console.error("Control: Failed to parse message:", err.message);
     }
