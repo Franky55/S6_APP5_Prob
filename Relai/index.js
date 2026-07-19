@@ -1,11 +1,43 @@
 const WebSocket = require("ws");
+const mqtt = require("mqtt");
 
-const ESP32_ADDRESS = "ws://192.168.1.100:81";
+const ESP32_ADDRESS = "ws://10.158.122.227/ws";
+const MQTT_BROKER = "mqtt://localhost:1883";
+const MQTT_TOPIC = "Archive/DB";
 const RECONNECT_DELAY = 3000;
 
 let ws;
+let mqttClient;
 
-function connect() {
+function connectMQTT() {
+  mqttClient = mqtt.connect(MQTT_BROKER);
+
+  mqttClient.on("connect", () => {
+    console.log("Relai: Connected to MQTT broker");
+    mqttClient.subscribe(MQTT_TOPIC, (err) => {
+      if (err) {
+        console.error("Relai: MQTT subscribe error:", err.message);
+      } else {
+        console.log("Relai: Subscribed to", MQTT_TOPIC);
+      }
+    });
+  });
+
+  mqttClient.on("message", (topic, payload) => {
+    console.log("Relai [MQTT][" + topic + "]:", payload.toString());
+  });
+
+  mqttClient.on("error", (err) => {
+    console.error("Relai: MQTT error:", err.message);
+  });
+
+  mqttClient.on("close", () => {
+    console.log("Relai: MQTT disconnected. Reconnecting in " + RECONNECT_DELAY + "ms...");
+    setTimeout(() => mqttClient.reconnect(), RECONNECT_DELAY);
+  });
+}
+
+function connectWS() {
   ws = new WebSocket(ESP32_ADDRESS);
 
   ws.on("open", () => {
@@ -15,7 +47,18 @@ function connect() {
   ws.on("message", (data) => {
     try {
       const message = JSON.parse(data.toString());
-      console.log("Relai: UUID received:", message.uuid);
+      console.log("Relai: UUID received:", message.uuid, "| In:", message.in);
+
+      if (mqttClient && mqttClient.connected) {
+        const payload = JSON.stringify({ uuid: message.uuid, in: message.in });
+        mqttClient.publish(MQTT_TOPIC, payload, (err) => {
+          if (err) {
+            console.error("Relai: MQTT publish error:", err.message);
+          } else {
+            console.log("Relai: Published to MQTT:", payload);
+          }
+        });
+      }
     } catch (err) {
       console.error("Relai: Failed to parse message:", err.message);
     }
@@ -27,8 +70,9 @@ function connect() {
 
   ws.on("close", () => {
     console.log("Relai: Disconnected from ESP32. Reconnecting in " + RECONNECT_DELAY + "ms...");
-    setTimeout(connect, RECONNECT_DELAY);
+    setTimeout(connectWS, RECONNECT_DELAY);
   });
 }
 
-connect();
+connectMQTT();
+connectWS();

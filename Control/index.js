@@ -1,6 +1,6 @@
 const WebSocket = require("ws");
 
-const ESP32_ADDRESS = "ws://192.168.1.100:81";
+const ESP32_ADDRESS = "ws://10.158.122.227/ws";
 const RECONNECT_DELAY = 3000;
 
 let ws;

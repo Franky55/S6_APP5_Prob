@@ -1,13 +1,12 @@
 {
-  "name": "relai",
+  "name": "archive",
   "version": "1.0.0",
-  "description": "Relay WebSocket client for ESP32 iBeacon detection",
+  "description": "MQTT subscriber with CSV database for iBeacon UUIDs",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "ws": "^8.18.0",
     "mqtt": "^5.10.0"
   }
 }
