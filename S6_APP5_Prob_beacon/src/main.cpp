@@ -1,3 +1,4 @@
+// Graf2102_Lanc0902
 #include <Arduino.h>
 
 #include <WiFi.h>
@@ -16,8 +17,8 @@
 
 // ================= WIFI =================
 
-const char* ssid = "FrankLauHouse";
-const char* password = "CrazyFrog69!";
+const char* ssid = "Gros_Charles";
+const char* password = "VroomVroom";
 
 // ================= BLE ==================
 
