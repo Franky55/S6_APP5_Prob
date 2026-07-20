@@ -9,7 +9,7 @@ const RECONNECT_DELAY = 3000;
 const HTTP_PORT = 3000;
 const CONTROL_ADDRESS = "http://localhost:3001";
 const CSV_PATH = path.join(__dirname, "db.csv");
-const UI_PATH = path.join(__dirname, "../../Control/UI/index.html");
+const UI_PATH = path.join(__dirname, "UI/index.html");
 
 function initCSV() {
   if (!fs.existsSync(CSV_PATH)) {
