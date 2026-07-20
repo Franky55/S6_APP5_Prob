@@ -38,6 +38,7 @@ function sendCoAP(command) {
 
 function startHTTP() {
   const server = http.createServer((req, res) => {
+
     if (req.url === "/" && req.method === "GET") {
       fs.readFile(UI_PATH, (err, data) => {
         if (err) {
@@ -48,7 +49,7 @@ function startHTTP() {
         res.writeHead(200, { "Content-Type": "text/html" });
         res.end(data);
       });
-    } else if (req.url === "/led/on" && req.method === "POST") {
+    } else if (req.url === "/led/on" && req.method === "POST") { // LED ON
       sendCoAP("on")
         .then((response) => {
           console.log("Control: ESP32 responded:", response);
@@ -60,7 +61,7 @@ function startHTTP() {
           res.writeHead(500, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ status: "error", message: err.message }));
         });
-    } else if (req.url === "/led/off" && req.method === "POST") {
+    } else if (req.url === "/led/off" && req.method === "POST") { // LED OFF
       sendCoAP("off")
         .then((response) => {
           console.log("Control: ESP32 responded:", response);
